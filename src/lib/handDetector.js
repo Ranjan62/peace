@@ -1,17 +1,18 @@
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision'
 
-// WASM runtime is bundled in /public/wasm (no CDN needed). Only the model file is fetched.
-const WASM = `${import.meta.env.BASE_URL}wasm`
-const MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
+const base = (p) => new URL(`${import.meta.env.BASE_URL}${p}`, window.location.href).href
+const WASM = base('wasm')
+const LOCAL_MODEL = base('models/hand_landmarker.task') // optional: drop the file here (see README)
+const REMOTE_MODEL = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
 
-const timeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Hand model timed out')), ms))])
+const timeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))])
 
 let pending = null // singleton: the model is only ever initialised once
 
-async function create(delegate) {
+async function create(model) {
   const fileset = await FilesetResolver.forVisionTasks(WASM)
   return HandLandmarker.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: MODEL, delegate },
+    baseOptions: { modelAssetPath: model, delegate: 'CPU' }, // CPU is the most reliable across browsers/laptops
     runningMode: 'VIDEO',
     numHands: 2,
     minHandDetectionConfidence: 0.4,
@@ -23,8 +24,9 @@ async function create(delegate) {
 export function loadDetector() {
   if (!pending) {
     pending = timeout(
-      timeout(create('GPU'), 10000).catch(() => create('CPU')),
-      40000,
+      create(LOCAL_MODEL).catch(() => create(REMOTE_MODEL)),
+      45000,
+      'Hand model timed out (slow or blocked network)',
     ).catch((e) => { pending = null; throw e })
   }
   return pending

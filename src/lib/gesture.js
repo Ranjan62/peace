@@ -4,17 +4,20 @@ const CURLED_FINGERS = [[12, 10], [16, 14], [20, 18]] // [tip, pip] for middle, 
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
 
+/** ratio = thumb-index gap relative to hand size; curled = how many of the other 3 fingers are folded (0-3). */
+export function measure(lm) {
+  if (!lm || lm.length < 21) return { ratio: 9, curled: 0 }
+  const size = dist(lm[WRIST], lm[MIDDLE_MCP]) || 1
+  const ratio = dist(lm[THUMB_TIP], lm[INDEX_TIP]) / size
+  const curled = CURLED_FINGERS.filter(([tip, pip]) => dist(lm[tip], lm[WRIST]) < dist(lm[pip], lm[WRIST]) * 1.2).length
+  return { ratio, curled }
+}
+
 /**
- * Korean finger heart: thumb tip and index tip pinched together (crossed),
- * while the remaining three fingers are curled into the palm.
- * Distances are normalised by hand size so it works at any camera distance.
+ * Korean finger heart: thumb tip and index tip pinched together,
+ * while at least two of the remaining three fingers are curled into the palm.
  */
 export function isFingerHeart(lm) {
-  if (!lm || lm.length < 21) return false
-  const size = dist(lm[WRIST], lm[MIDDLE_MCP])
-  if (size < 0.02) return false
-  const pinched = dist(lm[THUMB_TIP], lm[INDEX_TIP]) / size < 0.55
-  if (!pinched) return false
-  const curled = CURLED_FINGERS.filter(([tip, pip]) => dist(lm[tip], lm[WRIST]) < dist(lm[pip], lm[WRIST]) * 1.15).length
-  return curled >= 2
+  const { ratio, curled } = measure(lm)
+  return ratio < 0.6 && curled >= 2
 }

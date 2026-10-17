@@ -18,3 +18,11 @@ HTTPS or localhost**, so deploy to one of those before sending her the link.
   Constants sit at the top of `src/components/CameraScreen.jsx`.
 - If the camera is denied/unsupported or the model fails, a manual trigger button appears.
 - No frames are recorded, uploaded or stored; tracks are stopped on close and on leaving the screen.
+
+## If hand detection doesn't work
+Open the site with `?debug=1` on the end of the URL (e.g. `https://you.github.io/peace/?debug=1`) to see live model status and finger measurements.
+If the model can't download (blocked network/ad-blocker), save it locally once:
+```bash
+curl -L -o public/models/hand_landmarker.task https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+```
+then commit and push; the app tries `public/models/hand_landmarker.task` first.

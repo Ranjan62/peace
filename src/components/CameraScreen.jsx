@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CameraOff, Camera, Hand } from 'lucide-react'
 import HeartBurst from './HeartBurst'
 import { loadDetector } from '../lib/handDetector'
-import { isFingerHeart } from '../lib/gesture'
+import { isFingerHeart, measure } from '../lib/gesture'
 import { playHeart, buzz } from '../lib/feedback'
 
 const MESSAGES = [
@@ -15,6 +15,7 @@ const MESSAGES = [
   'This incident will be used against you in future arguments.',
   'Congratulations. You have unlocked absolutely nothing.',
 ]
+const DEBUG = new URLSearchParams(window.location.search).has('debug')
 const GOAL = 3           // successful hearts before the final screen
 const HOLD_FRAMES = 5    // gesture must persist this many detections (debounce)
 const COOLDOWN_MS = 2800 // a held gesture can't retrigger inside this window
@@ -36,6 +37,8 @@ export default function CameraScreen({ onDone }) {
   const [burst, setBurst] = useState(0)
   const [message, setMessage] = useState('')
   const [flash, setFlash] = useState(false)
+  const [modelError, setModelError] = useState('')
+  const [dbg, setDbg] = useState('')
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
@@ -82,7 +85,7 @@ export default function CameraScreen({ onDone }) {
       setPhase('live')
       loadDetector()
         .then((d) => { detectorRef.current = d; setModelState('ready') })
-        .catch((e) => { console.error('Hand model failed to load:', e); setModelState('failed') })
+        .catch((e) => { console.error('Hand model failed to load:', e); setModelError(String(e?.message || e)); setModelState('failed') })
     } catch (e) {
       stopCamera()
       const denied = e?.name === 'NotAllowedError' || e?.name === 'SecurityError'
@@ -100,7 +103,7 @@ export default function CameraScreen({ onDone }) {
     if (phase !== 'live' || modelState !== 'ready') return
     const det = detectorRef.current
     const v = videoRef.current
-    let raf, lastTime = -1, hold = 0
+    let raf, lastTime = -1, hold = 0, lastDbg = 0
     const tick = () => {
       if (v.readyState >= 2 && v.currentTime !== lastTime) {
         lastTime = v.currentTime
@@ -109,6 +112,11 @@ export default function CameraScreen({ onDone }) {
           const seen = lms.length > 0
           if (seen !== handsSeen.current) { handsSeen.current = seen; setHands(seen) }
           hold = lms.some(isFingerHeart) ? hold + 1 : 0
+          if (DEBUG && performance.now() - lastDbg > 200) {
+            lastDbg = performance.now()
+            if (seen) { const m = measure(lms[0]); setDbg(`pinch ${m.ratio.toFixed(2)} (need <0.60) · curled ${m.curled}/3 (need ≥2) · hold ${hold}/${HOLD_FRAMES}`) }
+            else setDbg('no hand in frame')
+          }
           if (hold >= HOLD_FRAMES) { hold = 0; fire() }
         } catch { /* skip a bad frame */ }
       }
@@ -119,6 +127,7 @@ export default function CameraScreen({ onDone }) {
   }, [phase, modelState, fire])
 
   let status = 'Camera warming up…'
+  if (phase === 'live' && modelState === 'loading') status = 'Loading hand model… (first time takes a few seconds)'
   if (flash) status = 'Gesture detected. Absolutely suspicious.'
   else if (phase === 'live' && modelState === 'ready') status = hands ? 'Hands detected. Interesting.' : 'Show me a hand. Slowly.'
   else if (modelState === 'failed') status = 'Detector unavailable. Manual mode engaged.'
@@ -151,6 +160,9 @@ export default function CameraScreen({ onDone }) {
         <HeartBurst trigger={burst} />
         {live && <div className="pill" role="status" aria-live="polite"><span className={`dot ${hands ? 'hot' : ''}`} />{status}</div>}
       </div>
+
+      {DEBUG && <p className="tiny">debug · model: {modelState}{modelError && ` · error: ${modelError}`} · {dbg}</p>}
+      {!DEBUG && modelState === 'failed' && modelError && <p className="tiny">Detector error: {modelError}</p>}
 
       <p className={`msg ${message ? 'has' : ''}`} role="status" aria-live="polite">{message || 'Hearts collected: ' + count + ' / ' + GOAL}</p>
       {message && <p className="tiny">Hearts collected: {count} / {GOAL}</p>}
